@@ -9,9 +9,9 @@ local Config = {
     RecreateIfDestroyed = true,
     OnlyOwnedVehicles = false,
     JobVehiclesAllowed = true,
-    LocalTesting = true
+    LocalTesting = true,
+    SaveCooldown = 3000 
 }
-
 function DebugPrint(msg)
     if Config.Debug then
         print(('[VEHICLE-RECONNECT][SERVER] %s'):format(msg))
@@ -20,7 +20,8 @@ end
 
 ESX.RegisterServerCallback('ch_deco_veh:checkVehicleOwner', function(source, cb, plate)
     local xPlayer = ESX.GetPlayerFromId(source)
-    
+    if not xPlayer then return cb(false) end
+
     if Config.OnlyOwnedVehicles then
         MySQL.Async.fetchScalar('SELECT 1 FROM owned_vehicles WHERE plate = @plate AND owner = @owner', {
             ['@plate'] = plate,
@@ -37,18 +38,21 @@ RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
     local src = source
     local xPlayer = ESX.GetPlayerFromId(src)
     
-    if not data or not data.vehicleData then
-        DebugPrint("Données du véhicule invalides")
+    if not xPlayer or not data or not data.vehicleData then
+        DebugPrint("Erreur: Données ou joueur invalide")
         return
+    end
+
+    local requiredFields = {'netId', 'model', 'position', 'plate'}
+    for _, field in ipairs(requiredFields) do
+        if not data.vehicleData[field] then
+            DebugPrint(("Erreur: Champ %s manquant dans les données du véhicule"):format(field))
+            return
+        end
     end
 
     if not data.owned and Config.OnlyOwnedVehicles then
         DebugPrint(("Véhicule non possédé (%s) - ignoré"):format(data.vehicleData.plate))
-        return
-    end
-
-    if not data.vehicleData.netId or not data.vehicleData.model or not data.vehicleData.position then
-        DebugPrint("Données du véhicule incomplètes")
         return
     end
 
@@ -67,66 +71,37 @@ RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
 
     DebugPrint(("Véhicule sauvegardé pour %s (Plaque: %s)"):format(xPlayer.getName(), data.vehicleData.plate))
 end)
+
 function RecreateVehicle(vehicleData)
-    if not vehicleData or not vehicleData.model then return nil end
-
-    local model = type(vehicleData.model) == 'string' and GetHashKey(vehicleData.model) or vehicleData.model
-    
-    if not IsModelInCdimage(model) then
-        DebugPrint(("Modèle %s non trouvé dans CD image"):format(vehicleData.model))
-        return nil
-    end
-
-    RequestModel(model)
-    local timeout = 0
-    while not HasModelLoaded(model) and timeout < 100 do
-        Citizen.Wait(10)
-        timeout = timeout + 1
-    end
-
-    if not HasModelLoaded(model) then
-        DebugPrint(("Échec du chargement du modèle %s"):format(vehicleData.model))
-        return nil
-    end
-
-    local vehicle = CreateVehicle(
-        model,
-        vehicleData.position.x,
-        vehicleData.position.y,
-        vehicleData.position.z + 0.5,
-        vehicleData.heading or 0.0,
-        true,
-        false
-    )
-
-    if DoesEntityExist(vehicle) then
-        SetVehicleOnGroundProperly(vehicle)
-        SetEntityAsMissionEntity(vehicle, true, true)
-        
-        if vehicleData.plate then
-            SetVehicleNumberPlateText(vehicle, vehicleData.plate)
-        end
-        
-        if vehicleData.properties then
-            ESX.Game.SetVehicleProperties(vehicle, vehicleData.properties)
-        end
-        
-        DebugPrint(("Véhicule recréé (Plaque: %s)"):format(vehicleData.plate or "INCONNUE"))
-        return vehicle
-    end
-    
-    DebugPrint("Échec de la création du véhicule")
+    DebugPrint("RecreateVehicle devrait être appelée côté client")
     return nil
 end
+
 function RestorePlayerToVehicle(playerId, vehicleData)
-    if not playerId or not vehicleData then return end
-    
-    if Config.JobVehiclesAllowed or (vehicleData.job and ESX.GetPlayerFromId(playerId).job.name == vehicleData.job) then
-        TriggerClientEvent('ch_deco_veh:restoreVehicle', playerId, vehicleData)
-        DebugPrint(("Restauration du véhicule pour le joueur %d (Plaque: %s)"):format(playerId, vehicleData.plate))
-    else
-        DebugPrint(("Le joueur %d n'a plus le bon métier pour le véhicule %s"):format(playerId, vehicleData.plate))
+    if not playerId or not vehicleData then 
+        DebugPrint("Erreur: Paramètres manquants pour RestorePlayerToVehicle")
+        return 
     end
+    
+    local xPlayer = ESX.GetPlayerFromId(playerId)
+    if not xPlayer then
+        DebugPrint(("Erreur: Joueur %d introuvable"):format(playerId))
+        return
+    end
+
+    if not Config.JobVehiclesAllowed and vehicleData.job and xPlayer.job.name ~= vehicleData.job then
+        DebugPrint(("Le joueur %s n'a plus le bon métier pour le véhicule %s"):format(xPlayer.getName(), vehicleData.plate))
+        return
+    end
+
+    local timeDiff = os.time() - vehicleData.timestamp
+    if timeDiff > Config.MaxReconnectTime then
+        DebugPrint(("Délai dépassé pour le véhicule %s (%ds/%ds)"):format(vehicleData.plate, timeDiff, Config.MaxReconnectTime))
+        return
+    end
+
+    TriggerClientEvent('ch_deco_veh:restoreVehicle', playerId, vehicleData)
+    DebugPrint(("Restauration du véhicule pour %s (Plaque: %s)"):format(xPlayer.getName(), vehicleData.plate))
 end
 
 RegisterCommand('testvehsave', function(source)
@@ -137,34 +112,32 @@ RegisterCommand('testvehsave', function(source)
 end, false)
 
 RegisterCommand('testvehrestore', function(source)
-    if Config.LocalTesting and savedVehicles[source] then
-        RestorePlayerToVehicle(source, savedVehicles[source])
-    elseif Config.LocalTesting then
-        DebugPrint(("Aucun véhicule sauvegardé pour le joueur %d"):format(source))
+    if Config.LocalTesting then
+        if savedVehicles[source] then
+            RestorePlayerToVehicle(source, savedVehicles[source])
+        else
+            DebugPrint(("Aucun véhicule sauvegardé pour le joueur %d"):format(source))
+            if Config.Notifications then
+                TriggerClientEvent('esx:showNotification', source, 'Aucun véhicule sauvegardé')
+            end
+        end
     end
 end, false)
 
 AddEventHandler('playerDropped', function(reason)
     local src = source
-    if savedVehicles[src] then
-        DebugPrint(("Joueur %d déconnecté, véhicule déjà sauvegardé (Plaque: %s)"):format(src, savedVehicles[src].plate))
-    else
-        TriggerClientEvent('ch_deco_veh:requestVehicleSave', src)
-        DebugPrint(("Joueur %d déconnecté, demande de sauvegarde envoyée"):format(src))
-    end
+    Citizen.SetTimeout(Config.SaveCooldown, function()
+        if not savedVehicles[src] then
+            TriggerClientEvent('ch_deco_veh:requestVehicleSave', src)
+            DebugPrint(("Demande de sauvegarde envoyée au joueur %d après déconnexion"):format(src))
+        end
+    end)
 end)
 
 AddEventHandler('esx:playerLoaded', function(playerId, xPlayer)
-    Citizen.SetTimeout(5000, function()
+    Citizen.SetTimeout(5000, function() 
         if savedVehicles[playerId] then
-            local timeDiff = os.time() - savedVehicles[playerId].timestamp
-            if timeDiff <= Config.MaxReconnectTime then
-                RestorePlayerToVehicle(playerId, savedVehicles[playerId])
-                DebugPrint(("Joueur %d reconnecté, véhicule restauré (Temps écoulé: %ds)"):format(playerId, timeDiff))
-            else
-                DebugPrint(("Joueur %d reconnecté mais délai dépassé (%ds/%ds)"):format(playerId, timeDiff, Config.MaxReconnectTime))
-                savedVehicles[playerId] = nil
-            end
+            RestorePlayerToVehicle(playerId, savedVehicles[playerId])
         end
     end)
 end)
