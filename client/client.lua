@@ -216,6 +216,40 @@ Citizen.CreateThread(function()
 end)
 
 Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(10000)
+
+        local ped = PlayerPedId()
+        if IsPedInAnyVehicle(ped, false) then
+            local vehicle = GetVehiclePedIsIn(ped, false)
+            if DoesEntityExist(vehicle) then
+                local plate = GetVehicleNumberPlateText(vehicle) or "NOPLATE"
+                local owned = IsVehicleOwned(plate)
+
+                local data = {
+                    netId = NetworkGetNetworkIdFromEntity(vehicle),
+                    model = GetEntityModel(vehicle),
+                    plate = plate,
+                    seat = FindPedVehicleSeat(ped, vehicle),
+                    position = GetEntityCoords(vehicle),
+                    heading = GetEntityHeading(vehicle),
+                    properties = ESX.Game.GetVehicleProperties(vehicle)
+                }
+
+                if data.model and data.position and data.heading then
+                    lastSavedVehicle = data
+                    TriggerServerEvent('ch_deco_veh:saveVehicleData', {
+                        vehicleData = data,
+                        owned = owned
+                    })
+                    DebugPrint(("Update position auto - %s"):format(data.plate), 2)
+                end
+            end
+        end
+    end
+end)
+
+Citizen.CreateThread(function()
     while not ESX do
         Citizen.Wait(100)
         ESX = exports['es_extended']:getSharedObject()
