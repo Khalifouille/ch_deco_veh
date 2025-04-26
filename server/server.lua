@@ -196,16 +196,6 @@ RegisterCommand('testvehrestore', function(source)
     end
 end, false)
 
-AddEventHandler('playerDropped', function(reason)
-    local src = source
-    Citizen.SetTimeout(Config.SaveCooldown, function()
-        if not savedVehicles[src] then
-            TriggerClientEvent('ch_deco_veh:requestVehicleSave', src)
-            DebugPrint(("Demande de sauvegarde envoyée au joueur %d après déconnexion"):format(src))
-        end
-    end)
-end)
-
 AddEventHandler('esx:playerLoaded', function(playerId, xPlayer)
     Citizen.SetTimeout(5000, function() 
         if savedVehicles[playerId] then

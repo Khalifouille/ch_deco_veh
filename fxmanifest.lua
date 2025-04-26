@@ -5,11 +5,11 @@ shared_script '@es_extended/imports.lua'
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
-    'server/esx_vehicle_reconnect.lua'
+    'server/server.lua'
 }
 
 client_scripts {
-    'client/esx_vehicle_reconnect.lua'
+    'client/client.lua'
 }
 
 dependencies {

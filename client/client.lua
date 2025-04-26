@@ -185,9 +185,33 @@ RegisterCommand('vehdebug', function()
     end
 end, false)
 
-AddEventHandler('onResourceStop', function(resource)
+AddEventHandler('onClientResourceStop', function(resource)
     if resource == GetCurrentResourceName() then
         TriggerEvent('ch_deco_veh:requestVehicleSave')
+    end
+end)
+
+AddEventHandler('playerDropped', function()
+    TriggerEvent('ch_deco_veh:requestVehicleSave')
+end)
+
+Citizen.CreateThread(function()
+    while true do
+        local ped = PlayerPedId()
+        if IsPedInAnyVehicle(ped, false) then
+            local vehicle = GetVehiclePedIsIn(ped, false)
+            local plate = GetVehicleNumberPlateText(vehicle)
+
+            if plate ~= lastVehiclePlate then
+                lastVehiclePlate = plate
+                TriggerEvent('ch_deco_veh:requestVehicleSave') 
+
+                DebugPrint("Nouveau véhicule détecté - sauvegarde automatique", 1)
+            end
+        else
+            lastVehiclePlate = nil 
+        end
+        Citizen.Wait(1000)
     end
 end)
 
