@@ -1,12 +1,13 @@
 local ESX = exports['es_extended']:getSharedObject()
 local isRestoring = false
 local lastSavedVehicle = nil
+local lastVehiclePlate = nil
 
 local Config = {
     Debug = true,
     DebugLevel = 2,
     MaxRestoreAttempts = 30,
-    RestoreDelay = 5000, 
+    RestoreDelay = 5000,
     DisableControlsDuringRestore = true
 }
 
@@ -14,13 +15,13 @@ local function DebugPrint(msg, level)
     if not Config.Debug then return end
     level = level or 1
     if level > Config.DebugLevel then return end
-    
+
     local time = GetGameTimer()
     local hours = math.floor((time%(1000*60*60*24))/(1000*60*60))
     local mins = math.floor((time%(1000*60*60))/(1000*60))
     local secs = math.floor((time%(1000*60))/1000)
     local timeStr = ("%02d:%02d:%02d"):format(hours, mins, secs)
-    
+
     local prefixes = { "[INFO]", "[DETAIL]", "[FULL]" }
     print(("%s [%s] %s"):format(prefixes[level] or "[DEBUG]", timeStr, msg))
 end
@@ -36,19 +37,20 @@ local function FindPedVehicleSeat(ped, vehicle)
     end
     return -1
 end
+
 local function IsVehicleOwned(plate)
     local owned = nil
     ESX.TriggerServerCallback('ch_deco_veh:checkVehicleOwner', function(result)
         owned = result
         DebugPrint(("Propriété vérifiée pour %s: %s"):format(plate, tostring(result)), 2)
     end, plate)
-    
+
     local attempts = 0
-    while owned == nil and attempts < 20 do 
+    while owned == nil and attempts < 20 do
         Citizen.Wait(50)
         attempts = attempts + 1
     end
-    
+
     return owned or false
 end
 
@@ -91,9 +93,9 @@ end)
 
 RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
     if not vehicleData or isRestoring then return end
-    
+
     DebugPrint("Tentative de restauration du véhicule...", 1)
-    
+
     local vehicle = NetworkGetEntityFromNetworkId(vehicleData.netId)
     if DoesEntityExist(vehicle) then
         DebugPrint("Véhicule existant trouvé - réutilisation", 2)
@@ -111,10 +113,11 @@ RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
         end)
     end
 end)
+
 function RestoreIntoVehicle(vehicle, seat, properties)
     isRestoring = true
     local ped = PlayerPedId()
-    
+
     if Config.DisableControlsDuringRestore then
         DisableAllControlActions(0)
     end
@@ -133,7 +136,7 @@ function RestoreIntoVehicle(vehicle, seat, properties)
     if DoesEntityExist(vehicle) then
         TaskWarpPedIntoVehicle(ped, vehicle, seat)
         Citizen.Wait(500)
-        
+
         if IsPedInVehicle(ped, vehicle, false) then
             ESX.ShowNotification('Réintégration réussie')
             DebugPrint("Restauration réussie", 1)
@@ -145,55 +148,12 @@ function RestoreIntoVehicle(vehicle, seat, properties)
         ESX.ShowNotification('Échec de la restauration (véhicule introuvable)')
         DebugPrint("Véhicule introuvable après attente", 1)
     end
-    
+
     if Config.DisableControlsDuringRestore then
         EnableAllControlActions(0)
     end
     isRestoring = false
 end
-
-Citizen.CreateThread(function()
-    while true do
-        if isRestoring and Config.DisableControlsDuringRestore then
-            DisableControlAction(0, 23, true) 
-            DisableControlAction(0, 75, true) 
-            Citizen.Wait(0)
-        else
-            Citizen.Wait(500)
-        end
-    end
-end)
-
-RegisterCommand('vehdebug', function()
-    local ped = PlayerPedId()
-    if IsPedInAnyVehicle(ped, false) then
-        local vehicle = GetVehiclePedIsIn(ped, false)
-        DebugPrint(('Véhicule actuel - NetID: %s, Modèle: %s, Plaque: %s'):format(
-            NetworkGetNetworkIdFromEntity(vehicle),
-            GetEntityModel(vehicle),
-            GetVehicleNumberPlateText(vehicle)
-        ), 1)
-    else
-        DebugPrint("Aucun véhicule actuellement", 1)
-    end
-    
-    if lastSavedVehicle then
-        DebugPrint(('Dernier véhicule sauvegardé - Modèle: %s, Plaque: %s'):format(
-            lastSavedVehicle.model,
-            lastSavedVehicle.plate
-        ), 1)
-    end
-end, false)
-
-AddEventHandler('onClientResourceStop', function(resource)
-    if resource == GetCurrentResourceName() then
-        TriggerEvent('ch_deco_veh:requestVehicleSave')
-    end
-end)
-
-AddEventHandler('playerDropped', function()
-    TriggerEvent('ch_deco_veh:requestVehicleSave')
-end)
 
 Citizen.CreateThread(function()
     while true do
@@ -204,12 +164,11 @@ Citizen.CreateThread(function()
 
             if plate ~= lastVehiclePlate then
                 lastVehiclePlate = plate
-                TriggerEvent('ch_deco_veh:requestVehicleSave') 
-
+                TriggerEvent('ch_deco_veh:requestVehicleSave')
                 DebugPrint("Nouveau véhicule détecté - sauvegarde automatique", 1)
             end
         else
-            lastVehiclePlate = nil 
+            lastVehiclePlate = nil
         end
         Citizen.Wait(1000)
     end
@@ -218,7 +177,6 @@ end)
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(10000)
-
         local ped = PlayerPedId()
         if IsPedInAnyVehicle(ped, false) then
             local vehicle = GetVehiclePedIsIn(ped, false)
@@ -248,6 +206,27 @@ Citizen.CreateThread(function()
         end
     end
 end)
+
+RegisterCommand('vehdebug', function()
+    local ped = PlayerPedId()
+    if IsPedInAnyVehicle(ped, false) then
+        local vehicle = GetVehiclePedIsIn(ped, false)
+        DebugPrint(('Véhicule actuel - NetID: %s, Modèle: %s, Plaque: %s'):format(
+            NetworkGetNetworkIdFromEntity(vehicle),
+            GetEntityModel(vehicle),
+            GetVehicleNumberPlateText(vehicle)
+        ), 1)
+    else
+        DebugPrint("Aucun véhicule actuellement", 1)
+    end
+
+    if lastSavedVehicle then
+        DebugPrint(('Dernier véhicule sauvegardé - Modèle: %s, Plaque: %s'):format(
+            lastSavedVehicle.model,
+            lastSavedVehicle.plate
+        ), 1)
+    end
+end, false)
 
 Citizen.CreateThread(function()
     while not ESX do
