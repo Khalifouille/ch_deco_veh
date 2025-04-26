@@ -57,10 +57,16 @@ local function SaveCurrentVehicle()
         if not DoesEntityExist(vehicle) then return false end
 
         local plate = GetVehicleNumberPlateText(vehicle) or "NOPLATE"
+        local model = GetEntityModel(vehicle)
+        local modelName = GetDisplayNameFromVehicleModel(model)
+
+        DebugPrint(("Sauvegarde modèle - Hash: %s, Nom: %s"):format(model, modelName), 2)
+
         IsVehicleOwned(plate, function(owned)
             local data = {
                 netId = NetworkGetNetworkIdFromEntity(vehicle),
-                model = GetEntityModel(vehicle),
+                model = model,
+                modelName = modelName,
                 plate = plate,
                 seat = FindPedVehicleSeat(ped, vehicle),
                 position = GetEntityCoords(vehicle),
@@ -74,7 +80,7 @@ local function SaveCurrentVehicle()
                     vehicleData = data,
                     owned = owned
                 })
-                DebugPrint(("Véhicule sauvegardé - Modèle: %s, Plaque: %s"):format(data.model, data.plate), 1)
+                DebugPrint(("Véhicule sauvegardé - Plaque: %s"):format(data.plate), 1)
                 return true
             else
                 DebugPrint("Données du véhicule incomplètes", 1)
@@ -95,22 +101,39 @@ end)
 
 RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
     if not vehicleData or isRestoring then return end
+    if not vehicleData.model or not vehicleData.position then
+        DebugPrint("Données véhicule incomplètes", 1)
+        return
+    end
 
-    DebugPrint("Tentative de restauration du véhicule...", 1)
+    DebugPrint(("Tentative de restauration - Modèle: %s"):format(vehicleData.model), 1)
     isRestoring = true
+
+    RequestModel(vehicleData.model)
+    local attempts = 0
+    while not HasModelLoaded(vehicleData.model) and attempts < 50 do
+        attempts = attempts + 1
+        Citizen.Wait(10)
+    end
+
+    if not HasModelLoaded(vehicleData.model) then
+        DebugPrint("Échec chargement modèle", 1)
+        isRestoring = false
+        return
+    end
 
     local vehicle = NetworkGetEntityFromNetworkId(vehicleData.netId)
     if DoesEntityExist(vehicle) then
         DebugPrint("Véhicule existant trouvé", 2)
         RestoreIntoVehicle(vehicle, vehicleData.seat, vehicleData.properties)
     else
-        DebugPrint("Création d'un nouveau véhicule", 2)
+        DebugPrint("Création nouveau véhicule", 2)
         ESX.Game.SpawnVehicle(vehicleData.model, vehicleData.position, vehicleData.heading, function(spawnedVehicle)
             if DoesEntityExist(spawnedVehicle) then
                 DebugPrint("Véhicule créé avec succès", 2)
                 RestoreIntoVehicle(spawnedVehicle, vehicleData.seat, vehicleData.properties)
             else
-                DebugPrint("Échec de la création du véhicule", 1)
+                DebugPrint("Échec création véhicule", 1)
                 isRestoring = false
             end
         end)
@@ -143,7 +166,7 @@ function RestoreIntoVehicle(vehicle, seat, properties)
             ESX.ShowNotification('Réintégration réussie')
             DebugPrint("Restauration réussie", 1)
         else
-            DebugPrint("Échec de restauration", 1)
+            DebugPrint("Échec de réintégration", 1)
         end
     else
         DebugPrint("Véhicule introuvable", 1)
@@ -183,7 +206,14 @@ Citizen.CreateThread(function()
 end)
 
 RegisterCommand('vehdebug', function()
-    DebugPrint(("État actuel - Dans véhicule: %s"):format(tostring(wasInVehicle)), 1)
+    local ped = PlayerPedId()
+    if IsPedInAnyVehicle(ped, false) then
+        local vehicle = GetVehiclePedIsIn(ped, false)
+        local model = GetEntityModel(vehicle)
+        DebugPrint(("Véhicule actuel - Hash: %s, Plaque: %s"):format(model, GetVehicleNumberPlateText(vehicle)), 1)
+    else
+        DebugPrint("Pas dans un véhicule", 1)
+    end
 end, false)
 
 Citizen.CreateThread(function()

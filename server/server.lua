@@ -119,6 +119,11 @@ RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
         return
     end
 
+    if type(data.vehicleData.model) ~= 'number' then
+        DebugPrint("Erreur: Modèle de véhicule invalide (doit être un nombre)")
+        return
+    end
+
     local required = {'plate', 'model', 'position'}
     for _, field in ipairs(required) do
         if not data.vehicleData[field] then
@@ -135,6 +140,7 @@ RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
     local vehicleData = {
         netId = data.vehicleData.netId,
         model = data.vehicleData.model,
+        modelName = data.vehicleData.modelName or "Inconnu",
         plate = data.vehicleData.plate,
         seat = data.vehicleData.seat or -1,
         position = data.vehicleData.position,
@@ -145,9 +151,10 @@ RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
         job = xPlayer.job.name
     }
 
+    DebugPrint(("Sauvegarde véhicule - Modèle: %s (%s)"):format(vehicleData.modelName, vehicleData.model), 1)
+
     savedVehicles[src] = vehicleData
     SaveToDatabase(xPlayer.identifier, vehicleData)
-    DebugPrint(("Sauvegarde pour %s (%s)"):format(xPlayer.getName(), vehicleData.plate))
 end)
 
 AddEventHandler('playerDropped', function(reason)
@@ -162,6 +169,7 @@ end)
 AddEventHandler('esx:playerLoaded', function(playerId, xPlayer)
     Citizen.SetTimeout(5000, function()
         if savedVehicles[playerId] then
+            DebugPrint(("Restauration depuis mémoire - Modèle: %s"):format(savedVehicles[playerId].model), 1)
             RestorePlayerToVehicle(playerId, savedVehicles[playerId])
             return
         end
@@ -170,9 +178,9 @@ AddEventHandler('esx:playerLoaded', function(playerId, xPlayer)
             if vehicleData then
                 local timeDiff = os.time() - vehicleData.timestamp
                 if timeDiff <= Config.MaxReconnectTime then
+                    DebugPrint(("Restauration depuis DB - Modèle: %s"):format(vehicleData.model), 1)
                     savedVehicles[playerId] = vehicleData
                     RestorePlayerToVehicle(playerId, vehicleData)
-                    DebugPrint(("Restauration depuis DB (%ds)"):format(timeDiff))
                 else
                     DebugPrint(("Données expirées (%ds)"):format(timeDiff))
                 end
@@ -198,8 +206,8 @@ function RestorePlayerToVehicle(playerId, vehicleData)
         return
     end
 
+    DebugPrint(("Restauration véhicule - Plaque: %s, Modèle: %s"):format(vehicleData.plate, vehicleData.model), 1)
     TriggerClientEvent('ch_deco_veh:restoreVehicle', playerId, vehicleData)
-    DebugPrint(("Restauration pour %s (%s)"):format(xPlayer.getName(), vehicleData.plate))
 end
 
 RegisterCommand('testvehsave', function(source)
