@@ -22,9 +22,14 @@ local function DebugPrint(msg, level)
     level = level or 1
     if level > Config.DebugLevel then return end
 
-    local time = os.date("%H:%M:%S")
+    local time = GetGameTimer()
+    local hours = math.floor((time%(1000*60*60*24))/(1000*60*60))
+    local mins = math.floor((time%(1000*60*60))/(1000*60))
+    local secs = math.floor((time%(1000*60))/1000)
+    local timeStr = ("%02d:%02d:%02d"):format(hours, mins, secs)
+
     local prefixes = { "[INFO]", "[DETAIL]", "[FULL]" }
-    print(("%s [%s] %s"):format(prefixes[level] or "[DEBUG]", time, msg))
+    print(("%s [%s] %s"):format(prefixes[level] or "[DEBUG]", timeStr, msg))
 end
 
 local function FindPedVehicleSeat(ped, vehicle)
