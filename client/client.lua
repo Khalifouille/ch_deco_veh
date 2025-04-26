@@ -1,3 +1,5 @@
+-- client/client.lua complet corrigé Yazid
+
 local ESX = exports['es_extended']:getSharedObject()
 local isRestoring = false
 local lastSavedVehicle = nil
@@ -104,44 +106,53 @@ RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
 
     DebugPrint("Tentative de restauration du véhicule...", 1)
 
-    local foundVehicle = nil
-    for vehicle in EnumerateVehicles() do
-        if DoesEntityExist(vehicle) then
-            local plate = GetVehicleNumberPlateText(vehicle)
-            if plate == vehicleData.plate then
-                foundVehicle = vehicle
-                DebugPrint("Véhicule existant trouvé avec la même plaque", 2)
-                break
+    ESX.TriggerServerCallback('ch_deco_veh:getVehicleNetId', function(netId)
+        if netId then
+            DebugPrint("Véhicule réseau trouvé - warp direct", 2)
+            local vehicle = NetworkGetEntityFromNetworkId(netId)
+            if DoesEntityExist(vehicle) then
+                RestoreIntoVehicle(vehicle, vehicleData.seat, vehicleData.properties)
+                return
             end
         end
-    end
 
-    if foundVehicle then
-        DebugPrint("Utilisation du véhicule existant trouvé", 2)
-        RestoreIntoVehicle(foundVehicle, vehicleData.seat, vehicleData.properties)
-    else
-        DebugPrint("Pas de véhicule existant, création d'un nouveau", 2)
-        ESX.Game.SpawnVehicle(vehicleData.model, vehicleData.position, vehicleData.heading, function(spawnedVehicle)
-            if DoesEntityExist(spawnedVehicle) then
-                DebugPrint("Véhicule créé avec succès", 2)
-                RestoreIntoVehicle(spawnedVehicle, vehicleData.seat, vehicleData.properties)
-            else
-                DebugPrint("Erreur création véhicule", 1)
-                ESX.ShowNotification('Erreur de restauration véhicule')
+        local foundVehicle = nil
+        for vehicle in EnumerateVehicles() do
+            if DoesEntityExist(vehicle) then
+                local plate = GetVehicleNumberPlateText(vehicle)
+                if plate == vehicleData.plate then
+                    foundVehicle = vehicle
+                    DebugPrint("Véhicule existant trouvé localement avec la même plaque", 2)
+                    break
+                end
             end
-        end)
-    end
+        end
+
+        if foundVehicle then
+            DebugPrint("Utilisation du véhicule existant trouvé localement", 2)
+            RestoreIntoVehicle(foundVehicle, vehicleData.seat, vehicleData.properties)
+        else
+            DebugPrint("Pas de véhicule existant, création d'un nouveau", 2)
+            ESX.Game.SpawnVehicle(vehicleData.model, vehicleData.position, vehicleData.heading, function(spawnedVehicle)
+                if DoesEntityExist(spawnedVehicle) then
+                    DebugPrint("Véhicule créé avec succès", 2)
+                    RestoreIntoVehicle(spawnedVehicle, vehicleData.seat, vehicleData.properties)
+                else
+                    DebugPrint("Erreur création véhicule", 1)
+                    ESX.ShowNotification('Erreur de restauration véhicule')
+                end
+            end)
+        end
+    end, vehicleData.plate)
 end)
+
 function RestoreIntoVehicle(vehicle, seat, properties)
+    isRestoring = true
     local ped = PlayerPedId()
 
     SetEntityAsMissionEntity(vehicle, true, true)
     SetVehicleHasBeenOwnedByPlayer(vehicle, true)
 
-    if Config.DisableControlsDuringRestore then
-        DisableAllControlActions(0)
-    end
-    
     if Config.DisableControlsDuringRestore then
         DisableAllControlActions(0)
     end
@@ -195,18 +206,17 @@ function EnumerateVehicles()
     end)
 end
 
-
 Citizen.CreateThread(function()
     while true do
         local ped = PlayerPedId()
         local inVehicle = IsPedInAnyVehicle(ped, false)
-        
+
         if inVehicle then
             wasInVehicle = true
             local vehicle = GetVehiclePedIsIn(ped, false)
             local plate = GetVehicleNumberPlateText(vehicle)
             local currentTime = GetGameTimer()
-            
+
             if plate ~= lastVehiclePlate or (currentTime - lastSaveTime) >= Config.AutoSaveInterval then
                 if SaveCurrentVehicle() then
                     lastVehiclePlate = plate
@@ -218,9 +228,17 @@ Citizen.CreateThread(function()
             lastVehiclePlate = nil
             TriggerServerEvent('ch_deco_veh:clearVehicleData')
         end
-        
+
         Citizen.Wait(1000)
     end
+end)
+
+Citizen.CreateThread(function()
+    while not ESX do
+        Citizen.Wait(100)
+        ESX = exports['es_extended']:getSharedObject()
+    end
+    DebugPrint("Client initialisé", 1)
 end)
 
 RegisterCommand('vehdebug', function()
@@ -233,11 +251,3 @@ RegisterCommand('vehdebug', function()
         DebugPrint("Pas dans un véhicule", 1)
     end
 end, false)
-
-Citizen.CreateThread(function()
-    while not ESX do
-        Citizen.Wait(100)
-        ESX = exports['es_extended']:getSharedObject()
-    end
-    DebugPrint("Client initialisé", 1)
-end)
