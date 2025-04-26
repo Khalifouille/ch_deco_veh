@@ -101,12 +101,10 @@ end)
 
 RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
     if not vehicleData or isRestoring then return end
-    
+
     DebugPrint("Tentative de restauration du véhicule...", 1)
 
     local foundVehicle = nil
-    local playerCoords = GetEntityCoords(PlayerPedId())
-
     for vehicle in EnumerateVehicles() do
         if DoesEntityExist(vehicle) then
             local plate = GetVehicleNumberPlateText(vehicle)
@@ -119,45 +117,20 @@ RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
     end
 
     if foundVehicle then
+        DebugPrint("Utilisation du véhicule existant trouvé", 2)
         RestoreIntoVehicle(foundVehicle, vehicleData.seat, vehicleData.properties)
     else
-        DebugPrint("Pas de véhicule trouvé - Création d'un nouveau véhicule...", 2)
+        DebugPrint("Pas de véhicule existant, création d'un nouveau", 2)
         ESX.Game.SpawnVehicle(vehicleData.model, vehicleData.position, vehicleData.heading, function(spawnedVehicle)
             if DoesEntityExist(spawnedVehicle) then
-                DebugPrint("Nouveau véhicule créé", 2)
+                DebugPrint("Véhicule créé avec succès", 2)
                 RestoreIntoVehicle(spawnedVehicle, vehicleData.seat, vehicleData.properties)
             else
-                DebugPrint("Échec de la création du véhicule", 1)
-                ESX.ShowNotification('Échec de la restauration du véhicule')
-            end
-        end)
-    end
-end)
-
-RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
-    if not vehicleData or isRestoring then return end
-
-    ESX.TriggerServerCallback('ch_deco_veh:getVehicleNetId', function(netId)
-        if netId then
-            DebugPrint("Véhicule réseau trouvé - warp direct", 2)
-            local vehicle = NetworkGetEntityFromNetworkId(netId)
-            if DoesEntityExist(vehicle) then
-                RestoreIntoVehicle(vehicle, vehicleData.seat, vehicleData.properties)
-                return
-            end
-        end
-
-        DebugPrint("Pas de véhicule existant - création...", 2)
-        ESX.Game.SpawnVehicle(vehicleData.model, vehicleData.position, vehicleData.heading, function(spawnedVehicle)
-            if DoesEntityExist(spawnedVehicle) then
-                DebugPrint("Véhicule spawné", 2)
-                RestoreIntoVehicle(spawnedVehicle, vehicleData.seat, vehicleData.properties)
-            else
-                DebugPrint("Erreur spawn véhicule", 1)
+                DebugPrint("Erreur création véhicule", 1)
                 ESX.ShowNotification('Erreur de restauration véhicule')
             end
         end)
-    end, vehicleData.plate)
+    end
 end)
 function RestoreIntoVehicle(vehicle, seat, properties)
     local ped = PlayerPedId()
