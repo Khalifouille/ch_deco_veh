@@ -101,45 +101,38 @@ end)
 
 RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
     if not vehicleData or isRestoring then return end
-    if not vehicleData.model or not vehicleData.position then
-        DebugPrint("Données véhicule incomplètes", 1)
-        return
+    
+    DebugPrint("Tentative de restauration du véhicule...", 1)
+
+    local foundVehicle = nil
+    local playerCoords = GetEntityCoords(PlayerPedId())
+
+    for vehicle in EnumerateVehicles() do
+        if DoesEntityExist(vehicle) then
+            local plate = GetVehicleNumberPlateText(vehicle)
+            if plate == vehicleData.plate then
+                foundVehicle = vehicle
+                DebugPrint("Véhicule existant trouvé avec la même plaque", 2)
+                break
+            end
+        end
     end
 
-    DebugPrint(("Tentative de restauration - Modèle: %s"):format(vehicleData.model), 1)
-    isRestoring = true
-
-    RequestModel(vehicleData.model)
-    local attempts = 0
-    while not HasModelLoaded(vehicleData.model) and attempts < 50 do
-        attempts = attempts + 1
-        Citizen.Wait(10)
-    end
-
-    if not HasModelLoaded(vehicleData.model) then
-        DebugPrint("Échec chargement modèle", 1)
-        isRestoring = false
-        return
-    end
-
-    local vehicle = NetworkGetEntityFromNetworkId(vehicleData.netId)
-    if DoesEntityExist(vehicle) then
-        DebugPrint("Véhicule existant trouvé", 2)
-        RestoreIntoVehicle(vehicle, vehicleData.seat, vehicleData.properties)
+    if foundVehicle then
+        RestoreIntoVehicle(foundVehicle, vehicleData.seat, vehicleData.properties)
     else
-        DebugPrint("Création nouveau véhicule", 2)
+        DebugPrint("Pas de véhicule trouvé - Création d'un nouveau véhicule...", 2)
         ESX.Game.SpawnVehicle(vehicleData.model, vehicleData.position, vehicleData.heading, function(spawnedVehicle)
             if DoesEntityExist(spawnedVehicle) then
-                DebugPrint("Véhicule créé avec succès", 2)
+                DebugPrint("Nouveau véhicule créé", 2)
                 RestoreIntoVehicle(spawnedVehicle, vehicleData.seat, vehicleData.properties)
             else
-                DebugPrint("Échec création véhicule", 1)
-                isRestoring = false
+                DebugPrint("Échec de la création du véhicule", 1)
+                ESX.ShowNotification('Échec de la restauration du véhicule')
             end
         end)
     end
 end)
-
 function RestoreIntoVehicle(vehicle, seat, properties)
     local ped = PlayerPedId()
     
@@ -177,6 +170,25 @@ function RestoreIntoVehicle(vehicle, seat, properties)
     end
     isRestoring = false
 end
+
+function EnumerateVehicles()
+    return coroutine.wrap(function()
+        local handle, vehicle = FindFirstVehicle()
+        if not handle or handle == -1 then
+            EndFindVehicle(handle)
+            return
+        end
+
+        local success
+        repeat
+            coroutine.yield(vehicle)
+            success, vehicle = FindNextVehicle(handle)
+        until not success
+
+        EndFindVehicle(handle)
+    end)
+end
+
 
 Citizen.CreateThread(function()
     while true do
