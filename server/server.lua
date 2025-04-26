@@ -10,9 +10,26 @@ local Config = {
     OnlyOwnedVehicles = false,
     JobVehiclesAllowed = true,
     LocalTesting = true,
-    SaveCooldown = 3000, 
+    SaveCooldown = 3000,
     DatabaseTable = 'vehicle_reconnect'
 }
+
+local CREATE_TABLE_QUERY = [[
+    CREATE TABLE IF NOT EXISTS `vehicle_reconnect` (
+        `identifier` VARCHAR(60) NOT NULL,
+        `vehicle_data` LONGTEXT,
+        `timestamp` INT(11),
+        PRIMARY KEY (`identifier`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+]]
+
+local INSERT_VEHICLE_QUERY = [[
+    INSERT INTO `vehicle_reconnect` (identifier, vehicle_data, timestamp)
+    VALUES (@identifier, @data, @timestamp)
+    ON DUPLICATE KEY UPDATE vehicle_data = @data, timestamp = @timestamp
+]]
+
+local FETCH_VEHICLE_QUERY = 'SELECT vehicle_data FROM vehicle_reconnect WHERE identifier = @identifier'
 
 function DebugPrint(msg)
     if Config.Debug then
@@ -22,15 +39,12 @@ end
 
 MySQL.ready(function()
     if Config.EnableDatabase then
-        MySQL.Async.execute([[
-            CREATE TABLE IF NOT EXISTS `]]..Config.DatabaseTable..[[` (
-                `identifier` varchar(60) NOT NULL,
-                `vehicle_data` longtext,
-                `timestamp` int(11) DEFAULT NULL,
-                PRIMARY KEY (`identifier`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-        ]], {}, function()
-            DebugPrint("Table de base de données initialisée")
+        MySQL.Async.execute(CREATE_TABLE_QUERY, {}, function(success)
+            if success then
+                DebugPrint("Table DB prête")
+            else
+                DebugPrint("Erreur création table")
+            end
         end)
     end
 end)
@@ -38,23 +52,25 @@ end)
 local function SaveToDatabase(identifier, data)
     if not Config.EnableDatabase then return end
     
-    MySQL.Async.execute([[
-        INSERT INTO `]]..Config.DatabaseTable..[[` (identifier, vehicle_data, timestamp)
-        VALUES (@identifier, @data, @timestamp)
-        ON DUPLICATE KEY UPDATE vehicle_data = @data, timestamp = @timestamp
-    ]], {
-        ['@identifier'] = identifier,
-        ['@data'] = json.encode(data),
-        ['@timestamp'] = os.time()
-    }, function(rowsChanged)
-        DebugPrint(("Données sauvegardées en DB pour %s (%d lignes affectées)"):format(identifier, rowsChanged))
+    local success, err = pcall(function()
+        MySQL.Async.execute(INSERT_VEHICLE_QUERY, {
+            ['@identifier'] = identifier,
+            ['@data'] = json.encode(data),
+            ['@timestamp'] = os.time()
+        }, function(rowsChanged)
+            DebugPrint(("Sauvegarde DB: %d ligne(s)"):format(rowsChanged or 0))
+        end)
     end)
+    
+    if not success then
+        DebugPrint("Erreur DB: "..tostring(err))
+    end
 end
 
 local function LoadFromDatabase(identifier, cb)
     if not Config.EnableDatabase then return cb(nil) end
     
-    MySQL.Async.fetchScalar('SELECT vehicle_data FROM '..Config.DatabaseTable..' WHERE identifier = @identifier', {
+    MySQL.Async.fetchScalar(FETCH_VEHICLE_QUERY, {
         ['@identifier'] = identifier
     }, function(result)
         cb(result and json.decode(result))
@@ -82,17 +98,20 @@ RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
     local xPlayer = ESX.GetPlayerFromId(src)
     
     if not xPlayer or not data or not data.vehicleData then
-        DebugPrint("Erreur: Données ou joueur invalide")
+        DebugPrint("Erreur: Données invalides")
         return
     end
 
-    if not data.vehicleData.plate or not data.vehicleData.model or not data.vehicleData.position then
-        DebugPrint("Données véhicule incomplètes")
-        return
+    local required = {'plate', 'model', 'position'}
+    for _, field in ipairs(required) do
+        if not data.vehicleData[field] then
+            DebugPrint(("Champ manquant: %s"):format(field))
+            return
+        end
     end
 
     if not data.owned and Config.OnlyOwnedVehicles then
-        DebugPrint(("Véhicule non possédé (%s) - ignoré"):format(data.vehicleData.plate))
+        DebugPrint(("Véhicule non possédé (%s)"):format(data.vehicleData.plate))
         return
     end
 
@@ -113,9 +132,9 @@ RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
     SaveToDatabase(xPlayer.identifier, vehicleData)
 
     if Config.Notifications then
-        TriggerClientEvent('esx:showNotification', src, 'Véhicule sauvegardé')
+        --TriggerClientEvent('esx:showNotification', src, 'Véhicule sauvegardé')
     end
-    DebugPrint(("Véhicule sauvegardé pour %s (%s)"):format(xPlayer.getName(), data.vehicleData.plate))
+    DebugPrint(("Sauvegarde pour %s (%s)"):format(xPlayer.getName(), vehicleData.plate))
 end)
 
 AddEventHandler('playerDropped', function(reason)
@@ -123,7 +142,6 @@ AddEventHandler('playerDropped', function(reason)
     Citizen.SetTimeout(Config.SaveCooldown, function()
         if not savedVehicles[src] then
             TriggerClientEvent('ch_deco_veh:requestVehicleSave', src)
-            DebugPrint(("Demande de sauvegarde pour joueur %d après déco"):format(src))
         end
     end)
 end)
@@ -134,80 +152,59 @@ AddEventHandler('esx:playerLoaded', function(playerId, xPlayer)
             RestorePlayerToVehicle(playerId, savedVehicles[playerId])
             return
         end
-
+        
         LoadFromDatabase(xPlayer.identifier, function(vehicleData)
             if vehicleData then
                 local timeDiff = os.time() - vehicleData.timestamp
                 if timeDiff <= Config.MaxReconnectTime then
                     savedVehicles[playerId] = vehicleData
                     RestorePlayerToVehicle(playerId, vehicleData)
-                    DebugPrint(("Véhicule restauré depuis DB pour %s"):format(xPlayer.getName()))
+                    DebugPrint(("Restauration depuis DB (%ds)"):format(timeDiff))
                 else
-                    DebugPrint(("Données DB expirées pour %s (%ds)"):format(xPlayer.getName(), timeDiff))
+                    DebugPrint(("Données expirées (%ds)"):format(timeDiff))
                 end
             end
         end)
     end)
 end)
+
 function RestorePlayerToVehicle(playerId, vehicleData)
-    if not playerId or not vehicleData then 
-        DebugPrint("Erreur: Paramètres manquants pour RestorePlayerToVehicle")
-        return 
-    end
+    if not playerId or not vehicleData then return end
     
     local xPlayer = ESX.GetPlayerFromId(playerId)
-    if not xPlayer then
-        DebugPrint(("Erreur: Joueur %d introuvable"):format(playerId))
-        return
-    end
+    if not xPlayer then return end
 
     if not Config.JobVehiclesAllowed and vehicleData.job and xPlayer.job.name ~= vehicleData.job then
-        DebugPrint(("Le joueur %s n'a plus le bon métier pour le véhicule %s"):format(xPlayer.getName(), vehicleData.plate))
+        DebugPrint(("Métier incorrect (%s)"):format(vehicleData.job))
         return
     end
 
     local timeDiff = os.time() - vehicleData.timestamp
     if timeDiff > Config.MaxReconnectTime then
-        DebugPrint(("Délai dépassé pour le véhicule %s (%ds/%ds)"):format(vehicleData.plate, timeDiff, Config.MaxReconnectTime))
+        DebugPrint(("Délai dépassé (%ds)"):format(timeDiff))
         return
     end
 
     TriggerClientEvent('ch_deco_veh:restoreVehicle', playerId, vehicleData)
-    DebugPrint(("Restauration du véhicule pour %s (Plaque: %s)"):format(xPlayer.getName(), vehicleData.plate))
+    DebugPrint(("Restauration pour %s (%s)"):format(xPlayer.getName(), vehicleData.plate))
 end
 
 RegisterCommand('testvehsave', function(source)
     if Config.LocalTesting then
         TriggerClientEvent('ch_deco_veh:requestVehicleSave', source)
-        DebugPrint(("Demande de sauvegarde envoyée au joueur %d"):format(source))
     end
 end, false)
 
 RegisterCommand('testvehrestore', function(source)
-    if Config.LocalTesting then
-        if savedVehicles[source] then
-            RestorePlayerToVehicle(source, savedVehicles[source])
-        else
-            DebugPrint(("Aucun véhicule sauvegardé pour le joueur %d"):format(source))
-            if Config.Notifications then
-                TriggerClientEvent('esx:showNotification', source, 'Aucun véhicule sauvegardé')
-            end
-        end
+    if Config.LocalTesting and savedVehicles[source] then
+        RestorePlayerToVehicle(source, savedVehicles[source])
     end
 end, false)
-
-AddEventHandler('esx:playerLoaded', function(playerId, xPlayer)
-    Citizen.SetTimeout(5000, function() 
-        if savedVehicles[playerId] then
-            RestorePlayerToVehicle(playerId, savedVehicles[playerId])
-        end
-    end)
-end)
 
 Citizen.CreateThread(function()
     while not ESX do
         Citizen.Wait(100)
         ESX = exports['es_extended']:getSharedObject()
     end
-    DebugPrint("Script initialisé avec succès")
+    DebugPrint("Serveur initialisé")
 end)
