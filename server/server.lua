@@ -1,4 +1,5 @@
 ESX = exports['es_extended']:getSharedObject()
+
 local savedVehicles = {}
 
 local Config = {
@@ -110,6 +111,13 @@ ESX.RegisterServerCallback('ch_deco_veh:checkVehicleOwner', function(source, cb,
     end
 end)
 
+ESX.RegisterServerCallback('ch_deco_veh:getVehicleNetId', function(source, cb, plate)
+    if not plate then return cb(nil) end
+    local netId = VehicleManager:GetVehicleNetId(plate)
+    cb(netId)
+end)
+
+
 RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
     local src = source
     local xPlayer = ESX.GetPlayerFromId(src)
@@ -155,6 +163,7 @@ RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
 
     savedVehicles[src] = vehicleData
     SaveToDatabase(xPlayer.identifier, vehicleData)
+    VehicleManager:Register(vehicleData.netId, vehicleData.plate)
 end)
 
 AddEventHandler('playerDropped', function(reason)

@@ -5,6 +5,7 @@ shared_script '@es_extended/imports.lua'
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
+    'server/vehicle_manager.lua',
     'server/server.lua'
 }
 

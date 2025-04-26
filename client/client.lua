@@ -133,6 +133,32 @@ RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
         end)
     end
 end)
+
+RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
+    if not vehicleData or isRestoring then return end
+
+    ESX.TriggerServerCallback('ch_deco_veh:getVehicleNetId', function(netId)
+        if netId then
+            DebugPrint("Véhicule réseau trouvé - warp direct", 2)
+            local vehicle = NetworkGetEntityFromNetworkId(netId)
+            if DoesEntityExist(vehicle) then
+                RestoreIntoVehicle(vehicle, vehicleData.seat, vehicleData.properties)
+                return
+            end
+        end
+
+        DebugPrint("Pas de véhicule existant - création...", 2)
+        ESX.Game.SpawnVehicle(vehicleData.model, vehicleData.position, vehicleData.heading, function(spawnedVehicle)
+            if DoesEntityExist(spawnedVehicle) then
+                DebugPrint("Véhicule spawné", 2)
+                RestoreIntoVehicle(spawnedVehicle, vehicleData.seat, vehicleData.properties)
+            else
+                DebugPrint("Erreur spawn véhicule", 1)
+                ESX.ShowNotification('Erreur de restauration véhicule')
+            end
+        end)
+    end, vehicleData.plate)
+end)
 function RestoreIntoVehicle(vehicle, seat, properties)
     local ped = PlayerPedId()
     
