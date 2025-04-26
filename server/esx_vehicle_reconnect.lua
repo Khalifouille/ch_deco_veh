@@ -1,16 +1,15 @@
-local ESX = nil
+ESX = exports['es_extended']:getSharedObject()
 local savedVehicles = {}
 
 local Config = {
-    MaxReconnectTime = 1800, 
-    EnableDatabase = false,  
+    MaxReconnectTime = 1800,
+    EnableDatabase = false,
     Notifications = true,
     Debug = true,
     RecreateIfDestroyed = true,
-    OnlyOwnedVehicles = false, 
+    OnlyOwnedVehicles = false,
     JobVehiclesAllowed = true,
-    LocalTesting = true,
-    CheckOwnership = true
+    LocalTesting = true
 }
 
 function DebugPrint(msg)
@@ -19,13 +18,21 @@ function DebugPrint(msg)
     end
 end
 
-RegisterNetEvent('ch_deco_veh:receiveVehicleData', function(data)
+ESX.RegisterServerCallback('ch_deco_veh:checkVehicleOwner', function(source, cb, plate)
+    local xPlayer = ESX.GetPlayerFromId(source)
+    MySQL.Async.fetchScalar('SELECT 1 FROM owned_vehicles WHERE plate = @plate AND owner = @owner', {
+        ['@plate'] = plate,
+        ['@owner'] = xPlayer.identifier
+    }, function(result)
+        cb(result == 1)
+    end)
+end)
+
+RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
     local src = source
     local xPlayer = ESX.GetPlayerFromId(src)
     
-    if not xPlayer or not data or not data.inVehicle then return end
-
-    if Config.CheckOwnership and not data.owned then
+    if not data.owned and Config.OnlyOwnedVehicles then
         DebugPrint(("Véhicule non possédé (%s) - ignoré"):format(data.vehicleData.plate))
         return
     end
@@ -41,7 +48,6 @@ RegisterNetEvent('ch_deco_veh:receiveVehicleData', function(data)
         timestamp = os.time(),
         identifier = xPlayer.identifier
     }
-    DebugPrint(("Véhicule sauvegardé pour %s (Plaque: %s)"):format(xPlayer.getName(), data.vehicleData.plate))
 end)
 
 function RecreateVehicle(vehicleData)

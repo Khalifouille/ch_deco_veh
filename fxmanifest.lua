@@ -14,6 +14,5 @@ client_scripts {
 
 dependencies {
     'es_extended',
-    'oxmysql',
-    'ox_inventory'
+    'oxmysql'
 }
