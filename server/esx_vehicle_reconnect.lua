@@ -2,7 +2,7 @@ ESX = exports['es_extended']:getSharedObject()
 local savedVehicles = {}
 
 local Config = {
-    MaxReconnectTime = 1800,
+    MaxReconnectTime = 3600,
     EnableDatabase = false,
     Notifications = true,
     Debug = true,
@@ -73,6 +73,27 @@ function RecreateVehicle(vehicleData)
     return nil
 end
 
+function RecreateVehicle(vehicleData)
+    local model = vehicleData.model
+    RequestModel(model)
+    while not HasModelLoaded(model) do
+        Citizen.Wait(10)
+    end
+    
+    local vehicle = CreateVehicle(
+        model,
+        vehicleData.position.x,
+        vehicleData.position.y,
+        vehicleData.position.z + 0.5,
+        vehicleData.heading,
+        true,
+        false
+    )
+    
+    SetVehicleOnGroundProperly(vehicle)
+    SetEntityAsMissionEntity(vehicle, true, true)
+    return vehicle
+end
 function RestorePlayerToVehicle(playerId, vehicleData)
     TriggerClientEvent('ch_deco_veh:restoreVehicle', playerId, vehicleData)
 end
