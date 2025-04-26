@@ -30,6 +30,7 @@ local INSERT_VEHICLE_QUERY = [[
 ]]
 
 local FETCH_VEHICLE_QUERY = 'SELECT vehicle_data FROM vehicle_reconnect WHERE identifier = @identifier'
+local CLEAR_VEHICLE_QUERY = 'DELETE FROM vehicle_reconnect WHERE identifier = @identifier'
 
 function DebugPrint(msg)
     if Config.Debug then
@@ -76,6 +77,22 @@ local function LoadFromDatabase(identifier, cb)
         cb(result and json.decode(result))
     end)
 end
+
+RegisterNetEvent('ch_deco_veh:clearVehicleData', function()
+    local src = source
+    local xPlayer = ESX.GetPlayerFromId(src)
+    if not xPlayer then return end
+
+    savedVehicles[src] = nil
+    
+    if Config.EnableDatabase then
+        MySQL.Async.execute(CLEAR_VEHICLE_QUERY, {
+            ['@identifier'] = xPlayer.identifier
+        }, function(rowsChanged)
+            DebugPrint(("Données effacées pour %s (%d lignes)"):format(xPlayer.getName(), rowsChanged or 0))
+        end)
+    end
+end)
 
 ESX.RegisterServerCallback('ch_deco_veh:checkVehicleOwner', function(source, cb, plate)
     local xPlayer = ESX.GetPlayerFromId(source)
@@ -130,10 +147,6 @@ RegisterNetEvent('ch_deco_veh:saveVehicleData', function(data)
 
     savedVehicles[src] = vehicleData
     SaveToDatabase(xPlayer.identifier, vehicleData)
-
-    if Config.Notifications then
-        --TriggerClientEvent('esx:showNotification', src, 'Véhicule sauvegardé')
-    end
     DebugPrint(("Sauvegarde pour %s (%s)"):format(xPlayer.getName(), vehicleData.plate))
 end)
 
