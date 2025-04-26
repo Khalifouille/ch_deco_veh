@@ -134,6 +134,13 @@ RegisterNetEvent('ch_deco_veh:restoreVehicle', function(vehicleData)
 end)
 function RestoreIntoVehicle(vehicle, seat, properties)
     local ped = PlayerPedId()
+
+    SetEntityAsMissionEntity(vehicle, true, true)
+    SetVehicleHasBeenOwnedByPlayer(vehicle, true)
+
+    if Config.DisableControlsDuringRestore then
+        DisableAllControlActions(0)
+    end
     
     if Config.DisableControlsDuringRestore then
         DisableAllControlActions(0)
