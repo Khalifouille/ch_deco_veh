@@ -121,7 +121,7 @@ local function SaveVehicleData(src, xPlayer, vehicleData)
     local data = {
         netId = vehicleData.netId,
         model = vehicleData.model,
-        modelName = GetDisplayNameFromVehicleModel(vehicleData.model) or "Inconnu",
+        modelName = vehicleData.modelName or "Inconnu", 
         plate = vehicleData.plate,
         seat = vehicleData.seat or -1,
         position = vehicleData.position,

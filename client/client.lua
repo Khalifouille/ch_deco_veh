@@ -74,7 +74,7 @@ local function SaveCurrentVehicle(forceSave)
 
         DebugPrint(("Sauvegarde modèle - Hash: %s, Nom: %s"):format(model, modelName), 2)
 
-        IsVehicleOwned(plate, function(owned)
+        IsVehicleOwned(plate, function(owned)   
             local data = {
                 netId = NetworkGetNetworkIdFromEntity(vehicle),
                 model = model,
